@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Location Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Agent Location Tracker</h1>
+        <div class="search-box">
+            <input type="text" id="agent-number" placeholder="Enter 11-digit Agent Number" maxlength="11">
+            <button id="search-btn">Search</button>
+        </div>
+        <div class="slicers">
+            <select id="thana-select">
+                <option value="">Select Thana</option>
+                {% for thana in thanas %}
+                <option value="{{ thana }}">{{ thana }}</option>
+                {% endfor %}
+            </select>
+            <select id="district-select">
+                <option value="">Select District</option>
+                {% for district in districts %}
+                <option value="{{ district }}">{{ district }}</option>
+                {% endfor %}
+            </select>
+            <select id="region-select">
+                <option value="">Select Region</option>
+                {% for region in regions %}
+                <option value="{{ region }}">{{ region }}</option>
+                {% endfor %}
+            </select>
+            <button id="filter-btn">Filter</button>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <script>
+        var map = L.map('map').setView([23.8103, 90.4125], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        var markers = L.layerGroup().addTo(map);
+
+        function addMarker(lat, lon, agentInfo) {
+            var marker = L.marker([lat, lon]).addTo(markers);
+            var popupContent = `
+                <strong>Agent Account Number:</strong> ${agentInfo['Agent Account Number']}<br>
+                <strong>Distributor Code:</strong> ${agentInfo['Distributor Code']}<br>
+                <strong>Distributor Name:</strong> ${agentInfo['Distributor Name']}<br>
+                <strong>Assigned DSO Wallet:</strong> ${agentInfo['Assigned DSO Wallet']}<br>
+                <strong>Thana:</strong> ${agentInfo['Thana']}<br>
+                <strong>District:</strong> ${agentInfo['District']}<br>
+                <strong>Region:</strong> ${agentInfo['Region']}<br>
+                <strong>Latitude:</strong> ${lat}<br>
+                <strong>Longitude:</strong> ${lon}
+            `;
+            marker.bindPopup(popupContent);
+        }
+
+        $('#search-btn').click(function() {
+            var agentNumber = $('#agent-number').val();
+            if (agentNumber.length !== 11) {
+                alert('Please enter a valid 11-digit Agent Number');
+                return;
+            }
+
+            $.ajax({
+                url: '/search',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ agent_number: agentNumber }),
+                success: function(response) {
+                    if (response.error) {
+                        alert(response.error);
+                        return;
+                    }
+
+                    markers.clearLayers();
+                    addMarker(response.lat, response.lon, response.agent_info);
+                    map.setView([response.lat, response.lon], 15);
+                },
+                error: function() {
+                    alert('An error occurred while searching for the agent.');
+                }
+            });
+        });
+
+        $('#filter-btn').click(function() {
+            var thana = $('#thana-select').val();
+            var district = $('#district-select').val();
+            var region = $('#region-select').val();
+
+            $.ajax({
+                url: '/filter',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ thana: thana, district: district, region: region }),
+                success: function(response) {
+                    markers.clearLayers();
+                    var bounds = L.latLngBounds();
+                    response.forEach(function(agent) {
+                        addMarker(agent['Pinned Latitude'], agent['Pinned Longitude'], agent);
+                        bounds.extend([agent['Pinned Latitude'], agent['Pinned Longitude']]);
+                    });
+                    if (bounds.isValid()) {
+                        map.fitBounds(bounds);
+                    } else {
+                        alert('No agents found for the selected filters.');
+                    }
+                },
+                error: function() {
+                    alert('An error occurred while filtering agents.');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
